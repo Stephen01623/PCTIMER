@@ -5,18 +5,14 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
 WORKDIR /src
 
-# Copy the backend project file
-COPY backend/RemotePCTimer.Api/*.csproj ./RemotePCTimer.Api/
+# Copy project file and restore dependencies
+COPY RemotePCTimer.Api.csproj ./
+RUN dotnet restore RemotePCTimer.Api.csproj
 
-# Restore NuGet dependencies
-RUN dotnet restore ./RemotePCTimer.Api/RemotePCTimer.Api.csproj
+# Copy backend source files
+COPY . ./
 
-# Copy the backend source code
-COPY backend/RemotePCTimer.Api/ ./RemotePCTimer.Api/
-
-# Publish the application
-WORKDIR /src/RemotePCTimer.Api
-
+# Publish application
 RUN dotnet publish RemotePCTimer.Api.csproj \
     --configuration Release \
     --output /app/publish \
@@ -30,10 +26,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
 WORKDIR /app
 
-# Render provides the PORT environment variable
 ENV ASPNETCORE_ENVIRONMENT=Production
 
 COPY --from=build /app/publish .
 
-# Start the API and listen on Render's assigned port
+# Render assigns the port through PORT
 CMD ["sh", "-c", "dotnet RemotePCTimer.Api.dll --urls http://0.0.0.0:${PORT:-10000}"]
