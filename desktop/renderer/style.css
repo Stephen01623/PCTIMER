@@ -1,0 +1,323 @@
+/* ========================================
+   GLOBAL RESET
+======================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  color: #f8fafc;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background:
+    radial-gradient(ellipse at top, #123d69 0%, transparent 55%),
+    linear-gradient(135deg, #061426, #002b5c 60%, #071b32);
+}
+
+/* ========================================
+   LOCKED MODE - FULL SCREEN
+======================================== */
+
+body.locked-mode {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+.timer-card {
+  width: min(100%, 560px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 42px 36px;
+  text-align: center;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 28px;
+  background: rgba(9, 25, 46, 0.94);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.lock-screen {
+  width: 100%;
+}
+
+/* ========================================
+   BRAND
+======================================== */
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 18px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #0284c7);
+  font-size: 27px;
+  font-weight: 800;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(25px, 4vw, 36px);
+  letter-spacing: -0.8px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+}
+
+/* ========================================
+   SERVER CONNECTION
+======================================== */
+
+.connection {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 20px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.connection-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.connection.connected .connection-dot {
+  background: #34d399;
+}
+
+.connection.disconnected .connection-dot {
+  background: #fb7185;
+}
+
+/* ========================================
+   LOCK COUNTDOWN
+======================================== */
+
+.lock-description {
+  margin: 24px 0 18px;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.lock-countdown-label {
+  margin-top: 18px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#countdown {
+  margin: 12px 0;
+  color: #ffffff;
+  font-size: clamp(48px, 9vw, 72px);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+}
+
+#status {
+  margin: 8px 0 0;
+  color: #bfdbfe;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ========================================
+   ADMINISTRATOR ACCESS
+======================================== */
+
+.admin-section {
+  margin-top: 28px;
+}
+
+.admin-button,
+.admin-panel button,
+.maintenance-panel button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 12px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.admin-button {
+  border: 1px solid rgba(147, 197, 253, 0.4);
+  background: transparent;
+}
+
+.admin-button:hover {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.admin-panel,
+.maintenance-panel {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.admin-panel label {
+  display: block;
+  margin-bottom: 8px;
+  color: #dbeafe;
+  font-size: 13px;
+}
+
+.admin-panel input {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #475569;
+  border-radius: 10px;
+  outline: none;
+  background: #0f223b;
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.admin-panel input:focus {
+  border-color: #60a5fa;
+}
+
+.admin-panel .secondary-button,
+.maintenance-panel .secondary-button {
+  margin-top: 8px;
+  background: #334155;
+}
+
+.admin-panel .secondary-button:hover,
+.maintenance-panel .secondary-button:hover {
+  background: #475569;
+}
+
+.admin-error {
+  margin: 10px 0;
+  color: #fda4af;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.maintenance-panel p {
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ========================================
+   FOOTER
+======================================== */
+
+.note {
+  margin: 24px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ========================================
+   ACTIVE MODE - SMALL RECTANGLE
+======================================== */
+
+body.active-mode {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0b1c32;
+}
+
+body.active-mode .timer-card {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #315578;
+  border-radius: 10px;
+  background: #0b1c32;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+body.active-mode .lock-screen {
+  display: none !important;
+}
+
+body.active-mode .active-screen {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
+body.active-mode #activeCountdown {
+  width: 100%;
+  color: #ffffff;
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========================================
+   RESPONSIVE LOCK SCREEN
+======================================== */
+
+@media (max-width: 480px) {
+  body.locked-mode {
+    padding: 14px;
+  }
+
+  body.locked-mode .timer-card {
+    padding: 30px 20px;
+    border-radius: 22px;
+  }
+
+  body.locked-mode #countdown {
+    letter-spacing: 0;
+  }
+}

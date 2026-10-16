@@ -1,0 +1,93 @@
+
+# ==========================================
+# SECRETS AND ENVIRONMENT VARIABLES
+# ==========================================
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# ASP.NET Core User Secrets and local settings
+secrets.json
+appsettings.Local.json
+appsettings.Development.Local.json
+
+# Certificates and private keys
+*.pfx
+*.p12
+*.key
+*.pem
+
+# ==========================================
+# .NET / ASP.NET CORE BACKEND
+# ==========================================
+**/bin/
+**/obj/
+**/out/
+**/TestResults/
+*.user
+*.suo
+*.cache
+*.log
+
+# Visual Studio
+.vs/
+*.sln.docstates
+
+# ==========================================
+# NODE.JS / ELECTRON / EXPO
+# ==========================================
+**/node_modules/
+**/.expo/
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/out/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Package manager logs
+lerna-debug.log*
+
+# ==========================================
+# ELECTRON BUILD OUTPUT
+# ==========================================
+**/release/
+**/artifacts/
+**/electron-builder-debug.yml
+**/electron-builder-effective-config.yaml
+
+# ==========================================
+# MOBILE / EXPO
+# ==========================================
+**/web-build/
+**/android/.gradle/
+**/android/app/build/
+**/ios/Pods/
+**/ios/build/
+
+# ==========================================
+# OPERATING SYSTEM
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# EDITORS
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# ==========================================
+# LOCAL DATABASES AND BACKUPS
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
