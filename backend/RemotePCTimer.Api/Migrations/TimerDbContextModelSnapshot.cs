@@ -49,6 +49,48 @@ namespace RemotePCTimer.Api.Migrations
 
                     b.ToTable("pc_timers", (string)null);
                 });
+
+            modelBuilder.Entity("RemotePCTimer.Api.Models.Voucher", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RedeemedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RedeemedByDeviceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique();
+
+                    b.ToTable("vouchers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_vouchers_duration", "\"DurationMinutes\" IN (30, 60, 120)");
+
+                            t.HasCheckConstraint("CK_vouchers_status", "\"Status\" IN ('Available', 'Redeemed', 'Revoked')");
+                        });
+                });
 #pragma warning restore 612, 618
         }
     }

@@ -1,4 +1,7 @@
-require("dotenv").config();
+
+const path = require("path");
+const fs = require("fs");
+const dotenv = require("dotenv");
 
 const {
   app,
@@ -8,11 +11,35 @@ const {
 } = require("electron");
 
 const { execFile } = require("child_process");
-const path = require("path");
 
 // ======================================================
-// WINDOW AND APPLICATION STATE
+// ENVIRONMENT CONFIGURATION
 // ======================================================
+
+dotenv.config({
+  path: path.join(__dirname, ".env"),
+});
+
+const API_BASE_URL = (
+  process.env.API_BASE_URL ||
+  "https://pctimer.onrender.com"
+).replace(/\/+$/, "");
+
+const DESKTOP_API_KEY = process.env.DESKTOP_API_KEY;
+
+// ======================================================
+// SETTINGS
+// ======================================================
+
+const LOCK_GRACE_PERIOD_SECONDS = 120;
+const POLLING_INTERVAL_MS = 5000;
+
+const FLOATING_WIDTH = 230;
+const FLOATING_HEIGHT = 80;
+const FLOATING_MARGIN = 12;
+
+// Local cache stored in the user's application data folder.
+let cachePath = null;
 
 let mainWindow = null;
 let pollingInterval = null;
@@ -23,27 +50,140 @@ let currentMode = null;
 
 let shutdownDeadlineMs = null;
 let shutdownInitiated = false;
-
-// Allows the app to close after the admin uses
-// the application's Close Application button.
 let allowApplicationClose = false;
 
-// ======================================================
-// CONFIGURATION
-// ======================================================
+// Last successfully received server timer.
+let lastKnownTimer = null;
 
-const LOCK_GRACE_PERIOD_SECONDS = 120; // 2 minutes
-const POLLING_INTERVAL_MS = 5000;
-
-const FLOATING_WIDTH = 230;
-const FLOATING_HEIGHT = 80;
-const FLOATING_MARGIN = 12;
-
-const API_BASE_URL = process.env.API_BASE_URL;
-const DESKTOP_API_KEY = process.env.DESKTOP_API_KEY;
+// Whether the most recent server request succeeded.
+let serverConnected = false;
 
 // ======================================================
-// CREATE ELECTRON WINDOW
+// LOCAL TIMER CACHE
+// ======================================================
+
+function saveLocalCache() {
+  if (!cachePath) return;
+
+  try {
+    const data = {
+      savedAtUtc: new Date().toISOString(),
+      timer: lastKnownTimer,
+      shutdownDeadlineMs,
+    };
+
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify(data, null, 2),
+      "utf8"
+    );
+  } catch (error) {
+    console.error(
+      "Unable to save local timer cache:",
+      error.message
+    );
+  }
+}
+
+function loadLocalCache() {
+  if (!cachePath) return false;
+
+  try {
+    if (!fs.existsSync(cachePath)) {
+      console.log("No previous local timer cache found.");
+      return false;
+    }
+
+    const raw = fs.readFileSync(cachePath, "utf8");
+    const data = JSON.parse(raw);
+
+    if (
+      data.timer &&
+      typeof data.timer.isActive === "boolean"
+    ) {
+      lastKnownTimer = data.timer;
+
+      shutdownDeadlineMs =
+        Number.isFinite(data.shutdownDeadlineMs)
+          ? data.shutdownDeadlineMs
+          : null;
+
+      console.log("Previous timer cache restored.");
+
+      return true;
+    }
+  } catch (error) {
+    console.error(
+      "Unable to load local timer cache:",
+      error.message
+    );
+  }
+
+  return false;
+}
+
+// ======================================================
+// COUNTDOWN HELPERS
+// ======================================================
+
+function getTimerRemainingSeconds(timer) {
+  if (!timer || !timer.isActive) {
+    return 0;
+  }
+
+  if (timer.endsAtUtc) {
+    const endMs = Date.parse(timer.endsAtUtc);
+
+    if (Number.isFinite(endMs)) {
+      return Math.max(
+        0,
+        Math.ceil((endMs - Date.now()) / 1000)
+      );
+    }
+  }
+
+  return Math.max(
+    0,
+    Number(timer.remainingSeconds) || 0
+  );
+}
+
+function startShutdownCountdownIfNeeded() {
+  if (
+    shutdownDeadlineMs !== null ||
+    shutdownInitiated
+  ) {
+    return;
+  }
+
+  shutdownDeadlineMs =
+    Date.now() + LOCK_GRACE_PERIOD_SECONDS * 1000;
+
+  saveLocalCache();
+
+  console.log("Local shutdown grace period started.");
+}
+
+function cancelShutdownCountdown() {
+  shutdownDeadlineMs = null;
+  saveLocalCache();
+}
+
+function getShutdownRemainingSeconds() {
+  if (shutdownDeadlineMs === null) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (shutdownDeadlineMs - Date.now()) / 1000
+    )
+  );
+}
+
+// ======================================================
+// ELECTRON WINDOW
 // ======================================================
 
 function createWindow() {
@@ -67,10 +207,6 @@ function createWindow() {
     },
   });
 
-  // IMPORTANT:
-  // The close handler must be registered AFTER
-  // mainWindow has been created.
-  // This fixes the null .on() error.
   mainWindow.on("close", (event) => {
     if (
       currentMode === "locked" &&
@@ -86,7 +222,10 @@ function createWindow() {
       return;
     }
 
-    setMode("locked");
+    if (!serverConnected) {
+      applyOfflineState();
+    }
+
     mainWindow.show();
     mainWindow.focus();
   });
@@ -95,13 +234,26 @@ function createWindow() {
     mainWindow = null;
   });
 
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, url) => {
+      console.error("Renderer load failed:", {
+        errorCode,
+        errorDescription,
+        url,
+      });
+    }
+  );
+
   mainWindow.loadFile(
     path.join(__dirname, "renderer", "index.html")
-  );
+  ).catch((error) => {
+    console.error("Unable to load renderer:", error.message);
+  });
 }
 
 // ======================================================
-// CHANGE WINDOW MODE
+// WINDOW MODES
 // ======================================================
 
 function setMode(mode) {
@@ -116,10 +268,7 @@ function setMode(mode) {
   currentMode = mode;
 
   if (mode === "active") {
-    // ----------------------------------------------
-    // ACTIVE SESSION: SMALL FLOATING COUNTDOWN
-    // ----------------------------------------------
-
+    // Active timer: small floating window.
     mainWindow.setKiosk(false);
     mainWindow.setFullScreen(false);
 
@@ -131,26 +280,20 @@ function setMode(mode) {
         area.width -
         FLOATING_WIDTH -
         FLOATING_MARGIN,
-
       y:
         area.y +
         area.height -
         FLOATING_HEIGHT -
         FLOATING_MARGIN,
-
       width: FLOATING_WIDTH,
       height: FLOATING_HEIGHT,
     });
 
     mainWindow.setSkipTaskbar(true);
     mainWindow.setAlwaysOnTop(true, "screen-saver");
-
     mainWindow.show();
   } else {
-    // ----------------------------------------------
-    // NO ACTIVE SESSION: FULL-SCREEN LOCK INTERFACE
-    // ----------------------------------------------
-
+    // Inactive timer: lock interface.
     mainWindow.setKiosk(false);
     mainWindow.setFullScreen(false);
 
@@ -165,7 +308,6 @@ function setMode(mode) {
 
     mainWindow.setSkipTaskbar(false);
     mainWindow.setAlwaysOnTop(true, "screen-saver");
-
     mainWindow.setFullScreen(true);
     mainWindow.setKiosk(true);
 
@@ -177,40 +319,207 @@ function setMode(mode) {
 }
 
 // ======================================================
-// SHUTDOWN COUNTDOWN
+// SEND STATE TO THE RENDERER
 // ======================================================
 
-function startShutdownCountdownIfNeeded() {
-  if (
-    shutdownDeadlineMs !== null ||
-    shutdownInitiated
-  ) {
+function sendTimerUpdate(data) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
 
-  shutdownDeadlineMs =
-    Date.now() + LOCK_GRACE_PERIOD_SECONDS * 1000;
-}
-
-function cancelShutdownCountdown() {
-  shutdownDeadlineMs = null;
-}
-
-function getShutdownRemainingSeconds() {
-  if (shutdownDeadlineMs === null) {
-    return null;
-  }
-
-  return Math.max(
-    0,
-    Math.ceil(
-      (shutdownDeadlineMs - Date.now()) / 1000
-    )
-  );
+  mainWindow.webContents.send("timer:update", data);
 }
 
 // ======================================================
-// WINDOWS SHUTDOWN
+// APPLY LAST SAVED TIMER WHEN OFFLINE
+// ======================================================
+
+function applyOfflineState() {
+  serverConnected = false;
+
+  // No saved timer means we cannot safely guess
+  // whether a timer is active or should shut down.
+  if (!lastKnownTimer) {
+    cancelShutdownCountdown();
+    setMode("locked");
+
+    sendTimerUpdate({
+      connected: false,
+      isActive: false,
+      status: "OfflineNoSavedTimer",
+      remainingSeconds: 0,
+      shutdownRemainingSeconds: null,
+    });
+
+    return;
+  }
+
+  let active = lastKnownTimer.isActive === true;
+  let remaining = getTimerRemainingSeconds(lastKnownTimer);
+
+  // An active timer may have expired while offline.
+  if (active && remaining <= 0) {
+    active = false;
+
+    lastKnownTimer = {
+      ...lastKnownTimer,
+      isActive: false,
+      remainingSeconds: 0,
+      status: "ExpiredOffline",
+    };
+
+    saveLocalCache();
+  }
+
+  if (active) {
+    // Resume the last known active timer.
+    cancelShutdownCountdown();
+    setMode("active");
+  } else {
+    // Continue the saved grace countdown, or start one
+    // if the saved timer has expired / was inactive.
+    startShutdownCountdownIfNeeded();
+    setMode("locked");
+  }
+
+  sendTimerUpdate({
+    connected: false,
+    isActive: active,
+    status: "Offline",
+    remainingSeconds: remaining,
+    shutdownRemainingSeconds:
+      active ? null : getShutdownRemainingSeconds(),
+    serverTimeUtc: lastKnownTimer.serverTimeUtc || null,
+  });
+}
+
+// ======================================================
+// APPLY LATEST SERVER TIMER
+// ======================================================
+
+function applyServerTimer(timer) {
+  const remaining = Math.max(
+    0,
+    Number(timer.remainingSeconds) || 0
+  );
+
+  const active =
+    timer.isActive === true &&
+    timer.status !== "ShutdownRequested" &&
+    remaining > 0;
+
+  let endsAtUtc = timer.endsAtUtc || null;
+
+  // If the API doesn't provide endsAtUtc, calculate
+  // it using server time when available.
+  if (active && !endsAtUtc) {
+    const serverNow = timer.serverTimeUtc
+      ? Date.parse(timer.serverTimeUtc)
+      : Date.now();
+
+    if (Number.isFinite(serverNow)) {
+      endsAtUtc = new Date(
+        serverNow + remaining * 1000
+      ).toISOString();
+    }
+  }
+
+  lastKnownTimer = {
+    isActive: active,
+    endsAtUtc,
+    status: timer.status || "Unknown",
+    remainingSeconds: remaining,
+    serverTimeUtc: timer.serverTimeUtc || null,
+  };
+
+  serverConnected = true;
+
+  if (active) {
+    // The latest server timer takes priority.
+    cancelShutdownCountdown();
+    setMode("active");
+  } else {
+    // Continue an existing grace period if one exists.
+    startShutdownCountdownIfNeeded();
+    setMode("locked");
+  }
+
+  saveLocalCache();
+
+  sendTimerUpdate({
+    connected: true,
+    isActive: active,
+    status: lastKnownTimer.status,
+    remainingSeconds: active
+      ? getTimerRemainingSeconds(lastKnownTimer)
+      : 0,
+    shutdownRemainingSeconds:
+      active ? null : getShutdownRemainingSeconds(),
+    serverTimeUtc: lastKnownTimer.serverTimeUtc,
+  });
+}
+
+// ======================================================
+// FETCH SERVER TIMER
+// ======================================================
+
+async function fetchTimer() {
+  if (isFetching || shutdownInitiated) {
+    return;
+  }
+
+  if (!API_BASE_URL || !DESKTOP_API_KEY) {
+    console.error(
+      "Missing API_BASE_URL or DESKTOP_API_KEY."
+    );
+
+    applyOfflineState();
+    return;
+  }
+
+  isFetching = true;
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/desktop/timer`,
+      {
+        method: "GET",
+        headers: {
+          "X-Device-Key": DESKTOP_API_KEY,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+
+      throw new Error(
+        `HTTP ${response.status}: ${body.slice(0, 200)}`
+      );
+    }
+
+    const timer = await response.json();
+
+    console.log("Connected to timer server.");
+
+    // Always follow the latest successful server response.
+    applyServerTimer(timer);
+  } catch (error) {
+    console.error(
+      "Server unavailable; using local timer cache:",
+      error.message
+    );
+
+    applyOfflineState();
+  } finally {
+    isFetching = false;
+  }
+}
+
+// ======================================================
+// LOCAL COUNTDOWN AND SHUTDOWN
 // ======================================================
 
 function initiateShutdown() {
@@ -220,17 +529,18 @@ function initiateShutdown() {
 
   shutdownInitiated = true;
 
-  console.log("Shutdown countdown finished.");
+  console.warn("Shutdown countdown finished.");
 
   sendTimerUpdate({
-    connected: true,
+    connected: serverConnected,
     isActive: false,
     status: "ShuttingDown",
     remainingSeconds: 0,
     shutdownRemainingSeconds: 0,
   });
 
-  // Windows shutdown command.
+  // Windows will shut down immediately.
+  // Test carefully and save any open work first.
   execFile(
     "shutdown.exe",
     ["/s", "/t", "0"],
@@ -244,7 +554,7 @@ function initiateShutdown() {
         shutdownInitiated = false;
 
         sendTimerUpdate({
-          connected: true,
+          connected: serverConnected,
           isActive: false,
           status: "ShutdownFailed",
           remainingSeconds: 0,
@@ -255,179 +565,168 @@ function initiateShutdown() {
   );
 }
 
-// ======================================================
-// SEND TIMER DATA TO THE RENDERER
-// ======================================================
-
-function sendTimerUpdate(data) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  mainWindow.webContents.send("timer:update", data);
-}
-
-// ======================================================
-// CHECK TIMER API
-// ======================================================
-
-async function fetchTimer() {
-  if (isFetching || shutdownInitiated) {
-    return;
-  }
-
-  if (!API_BASE_URL || !DESKTOP_API_KEY) {
-    console.error(
-      "Missing API_BASE_URL or DESKTOP_API_KEY in desktop/.env"
-    );
-
-    cancelShutdownCountdown();
-    setMode("locked");
-
-    sendTimerUpdate({
-      connected: false,
-      isActive: false,
-      status: "Disconnected",
-      remainingSeconds: 0,
-      shutdownRemainingSeconds: null,
-    });
-
-    return;
-  }
-
-  isFetching = true;
-
-  try {
-    const response = await fetch(
-      `${API_BASE_URL.replace(/\/+$/, "")}/api/desktop/timer`,
-      {
-        method: "GET",
-        headers: {
-          "X-Device-Key": DESKTOP_API_KEY,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `Timer API returned HTTP ${response.status}`
-      );
-    }
-
-    const timer = await response.json();
-
-    const remaining = Math.max(
-      0,
-      Number(timer.remainingSeconds) || 0
-    );
-
-    const active =
-      timer.isActive === true &&
-      timer.status !== "ShutdownRequested" &&
-      remaining > 0;
-
-    if (active) {
-      // Active session found:
-      // cancel the shutdown countdown.
-      cancelShutdownCountdown();
-      setMode("active");
-    } else {
-      // No active session:
-      // switch to lock interface and start 2 minutes.
-      startShutdownCountdownIfNeeded();
-      setMode("locked");
-    }
-
-    sendTimerUpdate({
-      connected: true,
-      isActive: active,
-      status: timer.status || "Unknown",
-      remainingSeconds: remaining,
-      shutdownRemainingSeconds:
-        active ? null : getShutdownRemainingSeconds(),
-      serverTimeUtc: timer.serverTimeUtc || null,
-    });
-  } catch (error) {
-    console.error(
-      "Unable to retrieve timer status:",
-      error.message
-    );
-
-    // IMPORTANT:
-    // If the backend cannot be reached, do not shut
-    // down because the session status is unknown.
-    cancelShutdownCountdown();
-    setMode("locked");
-
-    sendTimerUpdate({
-      connected: false,
-      isActive: false,
-      status: "Disconnected",
-      remainingSeconds: 0,
-      shutdownRemainingSeconds: null,
-    });
-  } finally {
-    isFetching = false;
-  }
-}
-
-// ======================================================
-// UPDATE THE COUNTDOWN EVERY SECOND
-// ======================================================
-
 function updateCountdown() {
   if (shutdownInitiated) {
     return;
   }
 
-  const remaining = getShutdownRemainingSeconds();
+  // Update active countdown using the absolute expiry time.
+  if (lastKnownTimer && lastKnownTimer.isActive) {
+    const remaining =
+      getTimerRemainingSeconds(lastKnownTimer);
 
-  if (remaining === null) {
+    if (remaining <= 0) {
+      lastKnownTimer = {
+        ...lastKnownTimer,
+        isActive: false,
+        remainingSeconds: 0,
+        status: "Expired",
+      };
+
+      saveLocalCache();
+
+      startShutdownCountdownIfNeeded();
+      setMode("locked");
+
+      sendTimerUpdate({
+        connected: serverConnected,
+        isActive: false,
+        status: serverConnected ? "Expired" : "Offline",
+        remainingSeconds: 0,
+        shutdownRemainingSeconds:
+          getShutdownRemainingSeconds(),
+      });
+
+      return;
+    }
+
+    sendTimerUpdate({
+      connected: serverConnected,
+      isActive: true,
+      status: serverConnected
+        ? lastKnownTimer.status
+        : "Offline",
+      remainingSeconds: remaining,
+      shutdownRemainingSeconds: null,
+      serverTimeUtc: lastKnownTimer.serverTimeUtc,
+    });
+
     return;
   }
 
-  if (remaining <= 0) {
+  const shutdownRemaining = getShutdownRemainingSeconds();
+
+  if (shutdownRemaining === null) {
+    return;
+  }
+
+  if (shutdownRemaining <= 0) {
     initiateShutdown();
     return;
   }
 
   sendTimerUpdate({
-    connected: true,
+    connected: serverConnected,
     isActive: false,
-    shutdownRemainingSeconds: remaining,
+    status: serverConnected ? "Inactive" : "Offline",
+    remainingSeconds: 0,
+    shutdownRemainingSeconds: shutdownRemaining,
   });
 }
 
+
+ipcMain.on("timer:resize", (_event, size) => {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    currentMode !== "active"
+  ) {
+    return;
+  }
+
+  const width = Number(size?.width);
+  const height = Number(size?.height);
+
+  // Only allow the intended timer and warning sizes.
+  const allowedSizes = [
+    [42, 44],
+    [230, 80],
+    [390, 310],
+  ];
+
+  const allowed = allowedSizes.some(
+    ([allowedWidth, allowedHeight]) =>
+      width === allowedWidth && height === allowedHeight
+  );
+
+  if (!allowed) {
+    return;
+  }
+
+  const area = screen.getPrimaryDisplay().workArea;
+  const currentBounds = mainWindow.getBounds();
+
+  // Keep the resized timer inside the screen.
+  const x = Math.min(
+    Math.max(currentBounds.x, area.x),
+    area.x + area.width - width
+  );
+
+  const y = Math.min(
+    Math.max(currentBounds.y, area.y),
+    area.y + area.height - height
+  );
+
+  mainWindow.setBounds({
+    x,
+    y,
+    width,
+    height,
+  });
+});
+
+
 // ======================================================
-// ADMIN APPLICATION CLOSE BUTTON
+// ADMIN CLOSE BUTTON
 // ======================================================
 
 ipcMain.on("app:close", () => {
-  // This event comes from the application's
-  // Administrator Access interface.
   allowApplicationClose = true;
-
   app.quit();
 });
 
 // ======================================================
-// APPLICATION STARTUP
+// STARTUP
 // ======================================================
 
 app.whenReady().then(() => {
+  cachePath = path.join(
+    app.getPath("userData"),
+    "timer-cache.json"
+  );
+
+  console.log("Local cache path:", cachePath);
+  console.log("Timer API URL:", API_BASE_URL);
+  console.log(
+    "Desktop API key loaded:",
+    Boolean(DESKTOP_API_KEY)
+  );
+
+  // Restore the last known timer before contacting server.
+  loadLocalCache();
+
   createWindow();
 
-  // Check the server immediately.
+  // Use cached timer immediately while the server connects.
+  applyOfflineState();
+
+  // Server state overrides the cache when reachable.
   fetchTimer();
 
-  // Check the server every 5 seconds.
   pollingInterval = setInterval(() => {
     fetchTimer();
   }, POLLING_INTERVAL_MS);
 
-  // Update shutdown countdown every second.
   countdownInterval = setInterval(() => {
     updateCountdown();
   }, 1000);
@@ -449,12 +748,12 @@ app.on("before-quit", () => {
     clearInterval(countdownInterval);
     countdownInterval = null;
   }
+
+  saveLocalCache();
 });
 
 app.on("window-all-closed", () => {
-  // Do not automatically quit just because the
-  // window was closed. The application manages its
-  // own lifecycle.
+  // The application manages its own lifecycle.
 });
 
 app.on("activate", () => {

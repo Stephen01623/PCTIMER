@@ -25,6 +25,7 @@ builder.Services.AddDbContext<TimerDbContext>(options =>
 
 // Timer service
 builder.Services.AddScoped<ITimerService, TimerService>();
+builder.Services.AddScoped<IVoucherService, VoucherService>();
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();

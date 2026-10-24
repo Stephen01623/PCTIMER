@@ -1,13 +1,49 @@
+
 {
-  "name": "remote-pc-timer-desktop",
+  "name": "pc-timer",
+  "productName": "PC Timer",
   "version": "1.0.0",
-  "description": "Remote PC Timer desktop application",
+  "description": "PC Timer desktop application",
   "main": "main.js",
+  "author": "PC Timer",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.pctimer.desktop",
+    "productName": "PC Timer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+       ".env",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "PC-Timer-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PC Timer"
+    }
   },
   "devDependencies": {
-    "electron": "^43.0.0"
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0"
   },
   "dependencies": {
     "dotenv": "^18.0.8"

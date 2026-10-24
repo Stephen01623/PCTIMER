@@ -1,6 +1,10 @@
-/* ========================================
-   GLOBAL RESET
-======================================== */
+
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: transparent;
+  color: #f8fafc;
+}
 
 * {
   box-sizing: border-box;
@@ -11,313 +15,462 @@ body {
   width: 100%;
   height: 100%;
   margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  user-select: none;
 }
 
 [hidden] {
   display: none !important;
 }
 
-body {
-  color: #f8fafc;
-  font-family: "Segoe UI", Arial, sans-serif;
-  background:
-    radial-gradient(ellipse at top, #123d69 0%, transparent 55%),
-    linear-gradient(135deg, #061426, #002b5c 60%, #071b32);
+button,
+input {
+  font: inherit;
 }
 
-/* ========================================
-   LOCKED MODE - FULL SCREEN
-======================================== */
+button {
+  cursor: pointer;
+}
 
-body.locked-mode {
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  overflow: auto;
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 3px;
 }
 
 .timer-card {
-  width: min(100%, 560px);
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 42px 36px;
-  text-align: center;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 28px;
-  background: rgba(9, 25, 46, 0.94);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-}
-
-.lock-screen {
+  position: relative;
   width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: #f8fafc;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 32%);
 }
 
-/* ========================================
-   BRAND
-======================================== */
+.timer-header {
+  height: 32px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #111f36;
+  border-bottom: 1px solid #26374f;
+  -webkit-app-region: drag;
+}
+
+.brand,
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 
 .brand-icon {
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 18px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 18px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #2563eb, #0284c7);
-  font-size: 27px;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 12px;
   font-weight: 800;
 }
 
-.eyebrow {
-  margin: 0 0 12px;
-  color: #93c5fd;
-  font-size: 12px;
+.brand-name {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.icon-button,
+.expand-button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 26px;
+  padding: 0;
+  color: #f8fafc;
+  background: #26374f;
+  border: 0;
+  border-radius: 7px;
+  font-size: 22px;
+  line-height: 1;
+  -webkit-app-region: no-drag;
+}
+
+.icon-button:hover,
+.expand-button:hover {
+  background: #3b4f6b;
+}
+
+.active-screen {
+  height: calc(100% - 32px);
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  -webkit-app-region: drag;
+}
+
+.active-timer-label {
+  color: #94a3b8;
+  font-size: 9px;
   font-weight: 700;
+  letter-spacing: 1px;
+}
+
+#activeCountdown {
+  font-size: 27px;
+  line-height: 1.1;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.active-status {
+  color: #86efac;
+  font-size: 10px;
+}
+
+.compact-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px;
+  background: #0f172a;
+}
+
+.expand-button {
+  width: 28px;
+  height: 34px;
+  font-size: 25px;
+}
+
+/* Lock interface */
+
+.lock-screen {
+  height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 28px 22px;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, #1e3a5f 0, transparent 45%),
+    #0b1220;
+}
+
+.eyebrow {
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
   letter-spacing: 3px;
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(25px, 4vw, 36px);
-  letter-spacing: -0.8px;
+.lock-screen h1 {
+  margin: 12px 0 20px;
+  font-size: clamp(24px, 4vw, 38px);
 }
-
-h2 {
-  margin: 0 0 12px;
-  font-size: 22px;
-}
-
-/* ========================================
-   SERVER CONNECTION
-======================================== */
 
 .connection {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  margin-top: 20px;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f87171;
+}
+
+.connection.connected .connection-dot {
+  background: #4ade80;
+}
+
+.connection.disconnected .connection-dot {
+  background: #f87171;
+}
+
+.lock-description {
+  max-width: 480px;
+  margin: 22px auto;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.lock-countdown-label {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.lock-countdown {
+  margin: 8px 0;
+  font-size: clamp(38px, 8vw, 64px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+#status {
   color: #cbd5e1;
   font-size: 13px;
 }
 
-.connection-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f59e0b;
-}
-
-.connection.connected .connection-dot {
-  background: #34d399;
-}
-
-.connection.disconnected .connection-dot {
-  background: #fb7185;
-}
-
-/* ========================================
-   LOCK COUNTDOWN
-======================================== */
-
-.lock-description {
-  margin: 24px 0 18px;
-  color: #cbd5e1;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.lock-countdown-label {
-  margin-top: 18px;
-  color: #93c5fd;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-#countdown {
-  margin: 12px 0;
-  color: #ffffff;
-  font-size: clamp(48px, 9vw, 72px);
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 2px;
-}
-
-#status {
-  margin: 8px 0 0;
-  color: #bfdbfe;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-/* ========================================
-   ADMINISTRATOR ACCESS
-======================================== */
-
 .admin-section {
-  margin-top: 28px;
+  width: min(100%, 340px);
+  margin: 26px auto 0;
 }
 
-.admin-button,
-.admin-panel button,
-.maintenance-panel button {
+.admin-section button {
   width: 100%;
-  margin-top: 12px;
-  padding: 13px 16px;
-  border: 0;
-  border-radius: 12px;
-  color: #ffffff;
+  min-height: 42px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  color: #fff;
   background: #2563eb;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 700;
 }
 
-.admin-button {
-  border: 1px solid rgba(147, 197, 253, 0.4);
-  background: transparent;
+.admin-section button:hover {
+  background: #1d4ed8;
 }
 
-.admin-button:hover {
-  background: rgba(37, 99, 235, 0.18);
+.admin-section .secondary-button {
+  background: #334155;
+}
+
+.admin-section .secondary-button:hover {
+  background: #475569;
 }
 
 .admin-panel,
 .maintenance-panel {
-  margin-top: 20px;
+  margin-top: 14px;
+  padding: 16px;
   text-align: left;
+  background: #172033;
+  border: 1px solid #334155;
+  border-radius: 12px;
 }
 
 .admin-panel label {
   display: block;
   margin-bottom: 8px;
-  color: #dbeafe;
   font-size: 13px;
 }
 
 .admin-panel input {
   width: 100%;
-  padding: 13px;
+  padding: 12px;
+  color: #fff;
+  background: #0b1220;
   border: 1px solid #475569;
-  border-radius: 10px;
-  outline: none;
-  background: #0f223b;
-  color: #ffffff;
-  font-size: 15px;
-}
-
-.admin-panel input:focus {
-  border-color: #60a5fa;
-}
-
-.admin-panel .secondary-button,
-.maintenance-panel .secondary-button {
-  margin-top: 8px;
-  background: #334155;
-}
-
-.admin-panel .secondary-button:hover,
-.maintenance-panel .secondary-button:hover {
-  background: #475569;
+  border-radius: 8px;
+  user-select: text;
 }
 
 .admin-error {
-  margin: 10px 0;
-  color: #fda4af;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.note {
+  margin-top: 28px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+/* Warning modal */
+
+.warning-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgb(2 6 23 / 82%);
+  -webkit-app-region: no-drag;
+}
+
+.warning-dialog {
+  width: min(100%, 350px);
+  padding: 22px 20px;
+  text-align: center;
+  background: #172033;
+  border: 1px solid #475569;
+  border-radius: 18px;
+  box-shadow: 0 20px 70px rgb(0 0 0 / 55%);
+}
+
+.warning-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  color: #fff;
+  background: #d97706;
+  border-radius: 50%;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.warning-dialog.warning-critical {
+  border-color: #ef4444;
+}
+
+.warning-critical .warning-icon {
+  background: #dc2626;
+}
+
+.warning-dialog h2 {
+  margin: 8px 0;
+  font-size: 21px;
+}
+
+.warning-dialog p {
+  color: #cbd5e1;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.maintenance-panel p {
-  color: #cbd5e1;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-/* ========================================
-   FOOTER
-======================================== */
-
-.note {
-  margin: 24px 0 0;
-  color: #94a3b8;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-/* ========================================
-   ACTIVE MODE - SMALL RECTANGLE
-======================================== */
-
-body.active-mode {
-  display: block;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: #0b1c32;
-}
-
-body.active-mode .timer-card {
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid #315578;
-  border-radius: 10px;
-  background: #0b1c32;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-}
-
-body.active-mode .lock-screen {
-  display: none !important;
-}
-
-body.active-mode .active-screen {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-}
-
-body.active-mode #activeCountdown {
-  width: 100%;
-  color: #ffffff;
-  font-size: 27px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
+.warning-time {
+  margin: 12px 0;
+  font-size: 35px;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
 
-/* ========================================
-   RESPONSIVE LOCK SCREEN
-======================================== */
+.warning-dialog button {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 8px;
+  color: #fff;
+  background: #2563eb;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 800;
+}
 
-@media (max-width: 480px) {
-  body.locked-mode {
-    padding: 14px;
-  }
+.warning-critical button {
+  background: #dc2626;
+}
 
-  body.locked-mode .timer-card {
-    padding: 30px 20px;
-    border-radius: 22px;
-  }
+/* Collapsed timer */
 
-  body.locked-mode #countdown {
-    letter-spacing: 0;
-  }
+body.compact-mode,
+body.compact-mode .timer-card {
+  border-radius: 10px;
+}
+
+body.compact-mode .timer-header,
+body.compact-mode .active-screen,
+body.compact-mode .lock-screen,
+body.compact-mode .warning-overlay {
+  display: none !important;
+}
+
+/* Voucher redemption */
+
+.voucher-panel {
+  width: min(100%, 340px);
+  margin: 20px auto 0;
+  padding: 18px;
+  text-align: left;
+  background: #172033;
+  border: 1px solid #334155;
+  border-radius: 12px;
+}
+
+.voucher-panel label {
+  display: block;
+  margin-bottom: 9px;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.voucher-panel input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  color: #fff;
+  background: #0b1220;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  user-select: text;
+}
+
+.voucher-panel input:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.voucher-panel button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  color: #fff;
+  background: #2563eb;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 800;
+}
+
+.voucher-panel button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.voucher-panel button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.voucher-message {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.voucher-message.success {
+  color: #86efac;
+}
+
+.voucher-message.error {
+  color: #fca5a5;
+}
+
+.voucher-hint {
+  margin: 12px 0 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
 }

@@ -1,3 +1,4 @@
+
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("timerAPI", {
@@ -13,7 +14,15 @@ contextBridge.exposeInMainWorld("timerAPI", {
     });
   },
 
+  redeemVoucher(code) {
+    return ipcRenderer.invoke("voucher:redeem", code);
+  },
+
   closeApp() {
     ipcRenderer.send("app:close");
+  },
+
+  resizeWindow(width, height) {
+    ipcRenderer.send("timer:resize", { width, height });
   },
 });

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,17 +9,44 @@
     content="width=device-width, initial-scale=1.0"
   />
 
-  <title>Remote PC Timer</title>
+  <title>PC Timer</title>
 
   <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body class="locked-mode">
   <main class="timer-card">
+    <!-- Floating timer header -->
+    <header id="timerHeader" class="timer-header">
+      <div class="brand">
+        <span class="brand-icon">T</span>
+        <span class="brand-name">PC TIMER</span>
+      </div>
+
+      <div class="header-actions">
+        <button
+          id="collapseButton"
+          class="icon-button"
+          type="button"
+          title="Collapse timer"
+          aria-label="Collapse timer"
+        >›</button>
+      </div>
+    </header>
+
+    <!-- Compact collapsed view -->
+    <section id="compactScreen" class="compact-screen" hidden>
+      <button
+        id="expandButton"
+        class="expand-button"
+        type="button"
+        title="Show timer"
+        aria-label="Expand timer"
+      >‹</button>
+    </section>
+
     <!-- Full-screen lock interface -->
     <section id="lockScreen" class="lock-screen">
-      <div class="brand-icon">T</div>
-
       <p class="eyebrow">REMOTE PC TIMER</p>
 
       <h1>PC Access Restricted</h1>
@@ -29,14 +57,51 @@
       </div>
 
       <p id="lockDescription" class="lock-description">
-        No active timer session was detected.
+        Checking timer status...
       </p>
+      
+<!-- Voucher redemption -->
+<section id="voucherPanel" class="voucher-panel">
+  <form id="voucherForm">
+    <label for="voucherCode">Voucher Code</label>
+
+    <input
+      id="voucherCode"
+      name="voucherCode"
+      type="text"
+      placeholder="RPT-XXXX-XXXX-XXXX"
+      maxlength="40"
+      minlength="8"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      required
+    />
+
+    <button id="redeemVoucherButton" type="submit">
+      Redeem Voucher
+    </button>
+
+    <p
+      id="voucherMessage"
+      class="voucher-message"
+      role="status"
+      aria-live="polite"
+      hidden
+    ></p>
+
+    <p class="voucher-hint">
+      Redeem a valid voucher to activate your PC timer.
+    </p>
+  </form>
+</section>
+
 
       <div class="lock-countdown-label">
         Automatic shutdown countdown
       </div>
 
-      <div id="countdown">02:00</div>
+      <div id="countdown" class="lock-countdown">02:00</div>
 
       <p id="status" role="status">
         Checking timer status...
@@ -48,9 +113,7 @@
         </button>
 
         <section id="adminPanel" class="admin-panel" hidden>
-          <label for="adminPassword">
-            Administrator password
-          </label>
+          <label for="adminPassword">Administrator password</label>
 
           <input
             id="adminPassword"
@@ -77,9 +140,7 @@
         <section id="maintenancePanel" class="maintenance-panel" hidden>
           <h2>Administrator Access</h2>
 
-          <p>
-            Administrator access verified for this demo.
-          </p>
+          <p>Administrator access verified for this demo.</p>
 
           <button id="closeAppButton" type="button">
             Close Application
@@ -100,9 +161,38 @@
       </p>
     </section>
 
-    <!-- Active mode: timer only -->
+    <!-- Active mode: floating countdown -->
     <section id="activeScreen" class="active-screen" hidden>
+      <div class="active-timer-label">TIME REMAINING</div>
       <div id="activeCountdown">00:00:00</div>
+      <div id="activeStatus" class="active-status">Connected</div>
+    </section>
+
+    <!-- Warning modal -->
+    <section
+      id="warningModal"
+      class="warning-overlay"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="warningTitle"
+      aria-describedby="warningMessage"
+      hidden
+    >
+      <div id="warningDialog" class="warning-dialog">
+        <div id="warningIcon" class="warning-icon">!</div>
+
+        <h2 id="warningTitle">Time is running out</h2>
+
+        <p id="warningMessage">
+          Your PC timer is almost finished.
+        </p>
+
+        <div id="warningTime" class="warning-time">05:00</div>
+
+        <button id="dismissWarningButton" type="button">
+          OK, I understand
+        </button>
+      </div>
     </section>
   </main>
 
