@@ -190,6 +190,7 @@ function renderConnection() {
 function renderStatus() {
   renderConnection();
 
+  // Active timer: display the remaining session time.
   if (currentMode === "active" && latestData.isActive) {
     const remaining = getCurrentActiveRemainingSeconds();
 
@@ -203,11 +204,23 @@ function renderStatus() {
     return;
   }
 
+  // Offline mode: keep showing the LOCAL shutdown countdown.
+  // Do not replace it with "--:--" just because the server is unavailable.
   if (!latestData.connected) {
-    countdown.textContent = "--:--";
-    status.textContent = "Server unavailable.";
+    const shutdownRemaining = getCurrentShutdownRemainingSeconds();
+
+    countdown.textContent =
+      shutdownRemaining === null
+        ? "--:--"
+        : formatShutdownTime(shutdownRemaining);
+
+    status.textContent = "Offline mode";
+
     lockDescription.textContent =
-      "The server status cannot currently be verified.";
+      shutdownRemaining === null
+        ? "Waiting for the local shutdown countdown..."
+        : "The local shutdown countdown continues even without internet.";
+
     return;
   }
 
@@ -545,4 +558,5 @@ voucherForm.addEventListener("submit", async (event) => {
     setVoucherLoading(false);
   }
 });
+
 

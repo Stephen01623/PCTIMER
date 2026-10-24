@@ -1,4 +1,5 @@
 
+const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 const dotenv = require("dotenv");
@@ -12,13 +13,13 @@ const {
 
 const { execFile } = require("child_process");
 
-// ======================================================
-// ENVIRONMENT CONFIGURATION
-// ======================================================
-
 dotenv.config({
   path: path.join(__dirname, ".env"),
 });
+
+// ======================================================
+// CONFIGURATION
+// ======================================================
 
 const API_BASE_URL = (
   process.env.API_BASE_URL ||
@@ -27,10 +28,6 @@ const API_BASE_URL = (
 
 const DESKTOP_API_KEY = process.env.DESKTOP_API_KEY;
 
-// ======================================================
-// SETTINGS
-// ======================================================
-
 const LOCK_GRACE_PERIOD_SECONDS = 120;
 const POLLING_INTERVAL_MS = 5000;
 
@@ -38,8 +35,16 @@ const FLOATING_WIDTH = 230;
 const FLOATING_HEIGHT = 80;
 const FLOATING_MARGIN = 12;
 
-// Local cache stored in the user's application data folder.
+// Set false during testing to prevent actual Windows shutdown.
+const ENABLE_WINDOWS_SHUTDOWN = true;
+
+// ======================================================
+// APPLICATION STATE
+// ======================================================
+
+let desktopDeviceId = null;
 let cachePath = null;
+let deviceIdPath = null;
 
 let mainWindow = null;
 let pollingInterval = null;
@@ -52,14 +57,14 @@ let shutdownDeadlineMs = null;
 let shutdownInitiated = false;
 let allowApplicationClose = false;
 
-// Last successfully received server timer.
 let lastKnownTimer = null;
-
-// Whether the most recent server request succeeded.
 let serverConnected = false;
 
+let latestTimerUpdate = null;
+let latestModeUpdate = null;
+
 // ======================================================
-// LOCAL TIMER CACHE
+// LOCAL CACHE
 // ======================================================
 
 function saveLocalCache() {
@@ -78,10 +83,7 @@ function saveLocalCache() {
       "utf8"
     );
   } catch (error) {
-    console.error(
-      "Unable to save local timer cache:",
-      error.message
-    );
+    console.error("Unable to save local cache:", error.message);
   }
 }
 
@@ -94,8 +96,9 @@ function loadLocalCache() {
       return false;
     }
 
-    const raw = fs.readFileSync(cachePath, "utf8");
-    const data = JSON.parse(raw);
+    const data = JSON.parse(
+      fs.readFileSync(cachePath, "utf8")
+    );
 
     if (
       data.timer &&
@@ -109,25 +112,50 @@ function loadLocalCache() {
           : null;
 
       console.log("Previous timer cache restored.");
-
       return true;
     }
   } catch (error) {
-    console.error(
-      "Unable to load local timer cache:",
-      error.message
-    );
+    console.error("Unable to load local timer cache:", error.message);
   }
 
   return false;
 }
 
 // ======================================================
-// COUNTDOWN HELPERS
+// DEVICE ID
+// ======================================================
+
+function loadOrCreateDeviceId() {
+  try {
+    if (fs.existsSync(deviceIdPath)) {
+      desktopDeviceId = fs
+        .readFileSync(deviceIdPath, "utf8")
+        .trim();
+    }
+
+    if (!desktopDeviceId) {
+      desktopDeviceId = crypto.randomUUID();
+
+      fs.writeFileSync(
+        deviceIdPath,
+        desktopDeviceId,
+        "utf8"
+      );
+    }
+
+    console.log("Desktop device ID loaded.");
+  } catch (error) {
+    console.error("Unable to load device ID:", error.message);
+    desktopDeviceId = crypto.randomUUID();
+  }
+}
+
+// ======================================================
+// TIMER HELPERS
 // ======================================================
 
 function getTimerRemainingSeconds(timer) {
-  if (!timer || !timer.isActive) {
+  if (!timer || timer.isActive !== true) {
     return 0;
   }
 
@@ -149,44 +177,119 @@ function getTimerRemainingSeconds(timer) {
 }
 
 function startShutdownCountdownIfNeeded() {
+  if (shutdownInitiated) return;
+
+  // Start a fresh grace period if there is no valid future deadline.
   if (
-    shutdownDeadlineMs !== null ||
-    shutdownInitiated
+    shutdownDeadlineMs === null ||
+    shutdownDeadlineMs <= Date.now()
   ) {
-    return;
+    shutdownDeadlineMs =
+      Date.now() + LOCK_GRACE_PERIOD_SECONDS * 1000;
+
+    console.log(
+      `Local grace period started: ${LOCK_GRACE_PERIOD_SECONDS} seconds.`
+    );
+
+    saveLocalCache();
   }
-
-  shutdownDeadlineMs =
-    Date.now() + LOCK_GRACE_PERIOD_SECONDS * 1000;
-
-  saveLocalCache();
-
-  console.log("Local shutdown grace period started.");
 }
 
 function cancelShutdownCountdown() {
   shutdownDeadlineMs = null;
   saveLocalCache();
+
+  console.log("Local shutdown countdown cancelled.");
 }
 
 function getShutdownRemainingSeconds() {
-  if (shutdownDeadlineMs === null) {
-    return null;
-  }
+  if (shutdownDeadlineMs === null) return null;
 
   return Math.max(
     0,
-    Math.ceil(
-      (shutdownDeadlineMs - Date.now()) / 1000
-    )
+    Math.ceil((shutdownDeadlineMs - Date.now()) / 1000)
   );
 }
 
 // ======================================================
-// ELECTRON WINDOW
+// RENDERER COMMUNICATION
+// ======================================================
+
+function sendTimerUpdate(data) {
+  latestTimerUpdate = data;
+
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.webContents.isLoading()) return;
+
+  mainWindow.webContents.send("timer:update", data);
+}
+
+// ======================================================
+// WINDOW MODES
+// ======================================================
+
+function setMode(mode) {
+  latestModeUpdate = mode;
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    currentMode = mode;
+    return;
+  }
+
+  if (currentMode === mode) return;
+
+  currentMode = mode;
+
+  if (mode === "active") {
+    mainWindow.setKiosk(false);
+    mainWindow.setFullScreen(false);
+
+    const area = screen.getPrimaryDisplay().workArea;
+
+    mainWindow.setBounds({
+      x: area.x + area.width - FLOATING_WIDTH - FLOATING_MARGIN,
+      y: area.y + area.height - FLOATING_HEIGHT - FLOATING_MARGIN,
+      width: FLOATING_WIDTH,
+      height: FLOATING_HEIGHT,
+    });
+
+    mainWindow.setSkipTaskbar(true);
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+    mainWindow.show();
+  } else {
+    const bounds = screen.getPrimaryDisplay().bounds;
+
+    mainWindow.setKiosk(false);
+    mainWindow.setFullScreen(false);
+
+    mainWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    });
+
+    mainWindow.setSkipTaskbar(false);
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+    mainWindow.setFullScreen(true);
+    mainWindow.setKiosk(true);
+
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  if (!mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send("timer:mode", mode);
+  }
+}
+
+// ======================================================
+// WINDOW CREATION
 // ======================================================
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return;
+
   mainWindow = new BrowserWindow({
     width: FLOATING_WIDTH,
     height: FLOATING_HEIGHT,
@@ -218,13 +321,7 @@ function createWindow() {
   });
 
   mainWindow.once("ready-to-show", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-
-    if (!serverConnected) {
-      applyOfflineState();
-    }
+    if (!mainWindow || mainWindow.isDestroyed()) return;
 
     mainWindow.show();
     mainWindow.focus();
@@ -232,6 +329,18 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    if (latestModeUpdate) {
+      mainWindow.webContents.send("timer:mode", latestModeUpdate);
+    }
+
+    if (latestTimerUpdate) {
+      mainWindow.webContents.send("timer:update", latestTimerUpdate);
+    }
   });
 
   mainWindow.webContents.on(
@@ -245,102 +354,22 @@ function createWindow() {
     }
   );
 
-  mainWindow.loadFile(
-    path.join(__dirname, "renderer", "index.html")
-  ).catch((error) => {
-    console.error("Unable to load renderer:", error.message);
-  });
-}
-
-// ======================================================
-// WINDOW MODES
-// ======================================================
-
-function setMode(mode) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  if (currentMode === mode) {
-    return;
-  }
-
-  currentMode = mode;
-
-  if (mode === "active") {
-    // Active timer: small floating window.
-    mainWindow.setKiosk(false);
-    mainWindow.setFullScreen(false);
-
-    const area = screen.getPrimaryDisplay().workArea;
-
-    mainWindow.setBounds({
-      x:
-        area.x +
-        area.width -
-        FLOATING_WIDTH -
-        FLOATING_MARGIN,
-      y:
-        area.y +
-        area.height -
-        FLOATING_HEIGHT -
-        FLOATING_MARGIN,
-      width: FLOATING_WIDTH,
-      height: FLOATING_HEIGHT,
+  mainWindow
+    .loadFile(path.join(__dirname, "renderer", "index.html"))
+    .catch((error) => {
+      console.error("Unable to load renderer:", error.message);
     });
-
-    mainWindow.setSkipTaskbar(true);
-    mainWindow.setAlwaysOnTop(true, "screen-saver");
-    mainWindow.show();
-  } else {
-    // Inactive timer: lock interface.
-    mainWindow.setKiosk(false);
-    mainWindow.setFullScreen(false);
-
-    const bounds = screen.getPrimaryDisplay().bounds;
-
-    mainWindow.setBounds({
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-    });
-
-    mainWindow.setSkipTaskbar(false);
-    mainWindow.setAlwaysOnTop(true, "screen-saver");
-    mainWindow.setFullScreen(true);
-    mainWindow.setKiosk(true);
-
-    mainWindow.show();
-    mainWindow.focus();
-  }
-
-  mainWindow.webContents.send("timer:mode", mode);
 }
 
 // ======================================================
-// SEND STATE TO THE RENDERER
-// ======================================================
-
-function sendTimerUpdate(data) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  mainWindow.webContents.send("timer:update", data);
-}
-
-// ======================================================
-// APPLY LAST SAVED TIMER WHEN OFFLINE
+// OFFLINE STATE
 // ======================================================
 
 function applyOfflineState() {
   serverConnected = false;
 
-  // No saved timer means we cannot safely guess
-  // whether a timer is active or should shut down.
   if (!lastKnownTimer) {
-    cancelShutdownCountdown();
+    startShutdownCountdownIfNeeded();
     setMode("locked");
 
     sendTimerUpdate({
@@ -348,7 +377,7 @@ function applyOfflineState() {
       isActive: false,
       status: "OfflineNoSavedTimer",
       remainingSeconds: 0,
-      shutdownRemainingSeconds: null,
+      shutdownRemainingSeconds: getShutdownRemainingSeconds(),
     });
 
     return;
@@ -357,13 +386,13 @@ function applyOfflineState() {
   let active = lastKnownTimer.isActive === true;
   let remaining = getTimerRemainingSeconds(lastKnownTimer);
 
-  // An active timer may have expired while offline.
   if (active && remaining <= 0) {
     active = false;
 
     lastKnownTimer = {
       ...lastKnownTimer,
       isActive: false,
+      endsAtUtc: null,
       remainingSeconds: 0,
       status: "ExpiredOffline",
     };
@@ -372,12 +401,9 @@ function applyOfflineState() {
   }
 
   if (active) {
-    // Resume the last known active timer.
     cancelShutdownCountdown();
     setMode("active");
   } else {
-    // Continue the saved grace countdown, or start one
-    // if the saved timer has expired / was inactive.
     startShutdownCountdownIfNeeded();
     setMode("locked");
   }
@@ -385,33 +411,44 @@ function applyOfflineState() {
   sendTimerUpdate({
     connected: false,
     isActive: active,
-    status: "Offline",
-    remainingSeconds: remaining,
-    shutdownRemainingSeconds:
-      active ? null : getShutdownRemainingSeconds(),
+    status: active ? "Offline" : "Offline",
+    remainingSeconds: active ? remaining : 0,
+    shutdownRemainingSeconds: active
+      ? null
+      : getShutdownRemainingSeconds(),
     serverTimeUtc: lastKnownTimer.serverTimeUtc || null,
   });
 }
 
 // ======================================================
-// APPLY LATEST SERVER TIMER
+// SERVER STATE
 // ======================================================
 
 function applyServerTimer(timer) {
-  const remaining = Math.max(
+  const rawRemaining = Math.max(
     0,
     Number(timer.remainingSeconds) || 0
   );
+
+  let endsAtUtc = timer.endsAtUtc || null;
+  let remaining = rawRemaining;
+
+  if (endsAtUtc) {
+    const endMs = Date.parse(endsAtUtc);
+
+    if (Number.isFinite(endMs)) {
+      remaining = Math.max(
+        0,
+        Math.ceil((endMs - Date.now()) / 1000)
+      );
+    }
+  }
 
   const active =
     timer.isActive === true &&
     timer.status !== "ShutdownRequested" &&
     remaining > 0;
 
-  let endsAtUtc = timer.endsAtUtc || null;
-
-  // If the API doesn't provide endsAtUtc, calculate
-  // it using server time when available.
   if (active && !endsAtUtc) {
     const serverNow = timer.serverTimeUtc
       ? Date.parse(timer.serverTimeUtc)
@@ -426,20 +463,18 @@ function applyServerTimer(timer) {
 
   lastKnownTimer = {
     isActive: active,
-    endsAtUtc,
+    endsAtUtc: active ? endsAtUtc : null,
     status: timer.status || "Unknown",
-    remainingSeconds: remaining,
+    remainingSeconds: active ? remaining : 0,
     serverTimeUtc: timer.serverTimeUtc || null,
   };
 
   serverConnected = true;
 
   if (active) {
-    // The latest server timer takes priority.
     cancelShutdownCountdown();
     setMode("active");
   } else {
-    // Continue an existing grace period if one exists.
     startShutdownCountdownIfNeeded();
     setMode("locked");
   }
@@ -453,26 +488,22 @@ function applyServerTimer(timer) {
     remainingSeconds: active
       ? getTimerRemainingSeconds(lastKnownTimer)
       : 0,
-    shutdownRemainingSeconds:
-      active ? null : getShutdownRemainingSeconds(),
+    shutdownRemainingSeconds: active
+      ? null
+      : getShutdownRemainingSeconds(),
     serverTimeUtc: lastKnownTimer.serverTimeUtc,
   });
 }
 
 // ======================================================
-// FETCH SERVER TIMER
+// SERVER POLLING
 // ======================================================
 
 async function fetchTimer() {
-  if (isFetching || shutdownInitiated) {
-    return;
-  }
+  if (isFetching || shutdownInitiated) return;
 
   if (!API_BASE_URL || !DESKTOP_API_KEY) {
-    console.error(
-      "Missing API_BASE_URL or DESKTOP_API_KEY."
-    );
-
+    console.error("Missing API_BASE_URL or DESKTOP_API_KEY.");
     applyOfflineState();
     return;
   }
@@ -503,15 +534,13 @@ async function fetchTimer() {
     const timer = await response.json();
 
     console.log("Connected to timer server.");
+    console.log("Server status:", timer.status);
+    console.log("Server active:", timer.isActive);
+    console.log("Server remaining:", timer.remainingSeconds);
 
-    // Always follow the latest successful server response.
     applyServerTimer(timer);
   } catch (error) {
-    console.error(
-      "Server unavailable; using local timer cache:",
-      error.message
-    );
-
+    console.error("Server unavailable:", error.message);
     applyOfflineState();
   } finally {
     isFetching = false;
@@ -519,17 +548,128 @@ async function fetchTimer() {
 }
 
 // ======================================================
-// LOCAL COUNTDOWN AND SHUTDOWN
+// VOUCHER REDEMPTION
+// ======================================================
+
+ipcMain.handle("voucher:redeem", async (_event, rawCode) => {
+  if (typeof rawCode !== "string") {
+    return {
+      success: false,
+      message: "Please enter a valid voucher code.",
+    };
+  }
+
+  const code = rawCode.trim().toUpperCase();
+
+  if (code.length < 8 || code.length > 40) {
+    return {
+      success: false,
+      message: "Please check your voucher code.",
+    };
+  }
+
+  if (!API_BASE_URL || !DESKTOP_API_KEY) {
+    return {
+      success: false,
+      message: "The voucher service is not configured.",
+    };
+  }
+
+  if (!desktopDeviceId) {
+    return {
+      success: false,
+      message: "Unable to identify this computer. Restart the app.",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/desktop/vouchers/redeem`,
+      {
+        method: "POST",
+        headers: {
+          "X-Device-Key": DESKTOP_API_KEY,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          deviceId: desktopDeviceId,
+        }),
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const responseText = await response.text();
+
+    let result = {};
+
+    try {
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      result = {};
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message:
+          result.message ||
+          (response.status === 401
+            ? "Desktop authorization failed."
+            : response.status === 400
+              ? "Invalid or already-used voucher."
+              : `Voucher redemption failed (${response.status}).`),
+      };
+    }
+
+    await fetchTimer();
+
+    return {
+      success: true,
+      message: result.message || "Voucher redeemed successfully!",
+      data: result,
+    };
+  } catch (error) {
+    console.error("Voucher redemption failed:", error.message);
+
+    return {
+      success: false,
+      message:
+        "Cannot contact the voucher server. Check your internet connection and try again.",
+    };
+  }
+});
+
+// ======================================================
+// LOCAL COUNTDOWN
 // ======================================================
 
 function initiateShutdown() {
-  if (shutdownInitiated) {
+  if (shutdownInitiated) return;
+
+  if (!ENABLE_WINDOWS_SHUTDOWN) {
+    console.warn(
+      "Grace period ended. Windows shutdown is disabled for testing."
+    );
+
+    shutdownDeadlineMs = null;
+    saveLocalCache();
+
+    sendTimerUpdate({
+      connected: serverConnected,
+      isActive: false,
+      status: "GracePeriodEnded",
+      remainingSeconds: 0,
+      shutdownRemainingSeconds: 0,
+    });
+
     return;
   }
 
   shutdownInitiated = true;
 
-  console.warn("Shutdown countdown finished.");
+  console.warn("Grace period ended. Shutting down Windows.");
 
   sendTimerUpdate({
     connected: serverConnected,
@@ -539,46 +679,34 @@ function initiateShutdown() {
     shutdownRemainingSeconds: 0,
   });
 
-  // Windows will shut down immediately.
-  // Test carefully and save any open work first.
-  execFile(
-    "shutdown.exe",
-    ["/s", "/t", "0"],
-    (error) => {
-      if (error) {
-        console.error(
-          "Windows shutdown command failed:",
-          error.message
-        );
+  execFile("shutdown.exe", ["/s", "/t", "0"], (error) => {
+    if (error) {
+      console.error("Windows shutdown failed:", error.message);
 
-        shutdownInitiated = false;
+      shutdownInitiated = false;
 
-        sendTimerUpdate({
-          connected: serverConnected,
-          isActive: false,
-          status: "ShutdownFailed",
-          remainingSeconds: 0,
-          shutdownRemainingSeconds: 0,
-        });
-      }
+      sendTimerUpdate({
+        connected: serverConnected,
+        isActive: false,
+        status: "ShutdownFailed",
+        remainingSeconds: 0,
+        shutdownRemainingSeconds: 0,
+      });
     }
-  );
+  });
 }
 
 function updateCountdown() {
-  if (shutdownInitiated) {
-    return;
-  }
+  if (shutdownInitiated) return;
 
-  // Update active countdown using the absolute expiry time.
-  if (lastKnownTimer && lastKnownTimer.isActive) {
-    const remaining =
-      getTimerRemainingSeconds(lastKnownTimer);
+  if (lastKnownTimer && lastKnownTimer.isActive === true) {
+    const remaining = getTimerRemainingSeconds(lastKnownTimer);
 
     if (remaining <= 0) {
       lastKnownTimer = {
         ...lastKnownTimer,
         isActive: false,
+        endsAtUtc: null,
         remainingSeconds: 0,
         status: "Expired",
       };
@@ -591,10 +719,9 @@ function updateCountdown() {
       sendTimerUpdate({
         connected: serverConnected,
         isActive: false,
-        status: serverConnected ? "Expired" : "Offline",
+        status: "Expired",
         remainingSeconds: 0,
-        shutdownRemainingSeconds:
-          getShutdownRemainingSeconds(),
+        shutdownRemainingSeconds: getShutdownRemainingSeconds(),
       });
 
       return;
@@ -603,9 +730,7 @@ function updateCountdown() {
     sendTimerUpdate({
       connected: serverConnected,
       isActive: true,
-      status: serverConnected
-        ? lastKnownTimer.status
-        : "Offline",
+      status: serverConnected ? lastKnownTimer.status : "Offline",
       remainingSeconds: remaining,
       shutdownRemainingSeconds: null,
       serverTimeUtc: lastKnownTimer.serverTimeUtc,
@@ -614,13 +739,14 @@ function updateCountdown() {
     return;
   }
 
-  const shutdownRemaining = getShutdownRemainingSeconds();
+  // Grace period is local. It does not require internet access.
+  startShutdownCountdownIfNeeded();
 
-  if (shutdownRemaining === null) {
-    return;
-  }
+  const remaining = getShutdownRemainingSeconds();
 
-  if (shutdownRemaining <= 0) {
+  console.log("Local grace countdown:", remaining);
+
+  if (remaining <= 0) {
     initiateShutdown();
     return;
   }
@@ -630,10 +756,13 @@ function updateCountdown() {
     isActive: false,
     status: serverConnected ? "Inactive" : "Offline",
     remainingSeconds: 0,
-    shutdownRemainingSeconds: shutdownRemaining,
+    shutdownRemainingSeconds: remaining,
   });
 }
 
+// ======================================================
+// WINDOW RESIZE
+// ======================================================
 
 ipcMain.on("timer:resize", (_event, size) => {
   if (
@@ -647,7 +776,6 @@ ipcMain.on("timer:resize", (_event, size) => {
   const width = Number(size?.width);
   const height = Number(size?.height);
 
-  // Only allow the intended timer and warning sizes.
   const allowedSizes = [
     [42, 44],
     [230, 80],
@@ -659,35 +787,27 @@ ipcMain.on("timer:resize", (_event, size) => {
       width === allowedWidth && height === allowedHeight
   );
 
-  if (!allowed) {
-    return;
-  }
+  if (!allowed) return;
 
   const area = screen.getPrimaryDisplay().workArea;
-  const currentBounds = mainWindow.getBounds();
-
-  // Keep the resized timer inside the screen.
-  const x = Math.min(
-    Math.max(currentBounds.x, area.x),
-    area.x + area.width - width
-  );
-
-  const y = Math.min(
-    Math.max(currentBounds.y, area.y),
-    area.y + area.height - height
-  );
+  const bounds = mainWindow.getBounds();
 
   mainWindow.setBounds({
-    x,
-    y,
+    x: Math.min(
+      Math.max(bounds.x, area.x),
+      area.x + area.width - width
+    ),
+    y: Math.min(
+      Math.max(bounds.y, area.y),
+      area.y + area.height - height
+    ),
     width,
     height,
   });
 });
 
-
 // ======================================================
-// ADMIN CLOSE BUTTON
+// APP CLOSE
 // ======================================================
 
 ipcMain.on("app:close", () => {
@@ -705,31 +825,35 @@ app.whenReady().then(() => {
     "timer-cache.json"
   );
 
-  console.log("Local cache path:", cachePath);
-  console.log("Timer API URL:", API_BASE_URL);
-  console.log(
-    "Desktop API key loaded:",
-    Boolean(DESKTOP_API_KEY)
+  deviceIdPath = path.join(
+    app.getPath("userData"),
+    "desktop-device-id.txt"
   );
 
-  // Restore the last known timer before contacting server.
+  console.log("Local cache path:", cachePath);
+  console.log("Timer API URL:", API_BASE_URL);
+  console.log("Desktop API key loaded:", Boolean(DESKTOP_API_KEY));
+  console.log("Windows shutdown enabled:", ENABLE_WINDOWS_SHUTDOWN);
+
+  loadOrCreateDeviceId();
   loadLocalCache();
 
   createWindow();
 
-  // Use cached timer immediately while the server connects.
+  // Apply cached/offline state immediately without waiting for the server.
   applyOfflineState();
 
-  // Server state overrides the cache when reachable.
+  // Run the local countdown independently from server polling.
+  countdownInterval = setInterval(() => {
+    updateCountdown();
+  }, 1000);
+
+  // Server updates are additional, not required for the local countdown.
   fetchTimer();
 
   pollingInterval = setInterval(() => {
     fetchTimer();
   }, POLLING_INTERVAL_MS);
-
-  countdownInterval = setInterval(() => {
-    updateCountdown();
-  }, 1000);
 });
 
 // ======================================================
@@ -753,11 +877,18 @@ app.on("before-quit", () => {
 });
 
 app.on("window-all-closed", () => {
-  // The application manages its own lifecycle.
+  // Keep application lifecycle under explicit control.
 });
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+
+    // Reapply current state to the recreated window.
+    if (lastKnownTimer) {
+      applyOfflineState();
+    } else {
+      fetchTimer();
+    }
   }
 });

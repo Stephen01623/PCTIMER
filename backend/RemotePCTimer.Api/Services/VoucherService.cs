@@ -189,23 +189,18 @@ return (true, "Voucher redeemed successfully.", new RedeemVoucherResponse
     EndsAtUtc = timer.EndsAtUtc.Value
 });
     }
+private static string GenerateCode()
+{
+    const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-    private static string GenerateCode()
-    {
-        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    var bytes = RandomNumberGenerator.GetBytes(6);
+    var chars = new char[6];
 
-        var randomBytes = RandomNumberGenerator.GetBytes(12);
-        var chars = new char[12];
+    for (int i = 0; i < chars.Length; i++)
+        chars[i] = alphabet[bytes[i] % alphabet.Length];
 
-        for (var i = 0; i < chars.Length; i++)
-        {
-            chars[i] = alphabet[randomBytes[i] % alphabet.Length];
-        }
-
-        var raw = new string(chars);
-
-        return $"RPT-{raw[..4]}-{raw[4..8]}-{raw[8..12]}";
-    }
+    return $"RPT-{new string(chars)}";
+}
 
     private static string NormalizeCode(string code)
     {
